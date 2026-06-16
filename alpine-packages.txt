@@ -1,0 +1,6 @@
+bash~=5.3
+ca-certificates~=20260611-r0
+jq~=1.8
+libc6-compat~=1.1
+py3-pip~=26.1
+python3~=3.14

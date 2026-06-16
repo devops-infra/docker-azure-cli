@@ -1,0 +1,68 @@
+schemaVersion: 2.0.0
+
+commandTests:
+  - name: Alpine version
+    command: cat
+    args: [/etc/os-release]
+    expectedOutput: [VERSION_ID=3\.24]
+
+  - name: Azure CLI exact version
+    command: bash
+    envVars:
+      - key: EXPECTED_AZ_VERSION
+        value: ${AZ_VERSION}
+    args:
+      - -lc
+      - test "$(az version --output json | jq -r '."azure-cli"')" = "${EXPECTED_AZ_VERSION}"
+
+  - name: Runtime tools smoke tests
+    command: bash
+    args:
+      - -lc
+      - |
+        bash --version >/dev/null
+        jq --version >/dev/null
+        python --version >/dev/null
+        python3 --version >/dev/null
+        pip --version >/dev/null
+        pip3 --version >/dev/null
+        az --version >/dev/null
+
+  - name: Unrelated CLIs are absent
+    command: bash
+    args:
+      - -lc
+      - |
+        for bin in aws gcloud terraform tofu terragrunt; do
+          ! command -v "$bin" >/dev/null 2>&1 || exit 1
+        done
+
+  - name: Temporary and APK cache cleaned
+    command: bash
+    args:
+      - -lc
+      - >-
+        test ! -f /tmp/alpine-packages.txt &&
+        (test ! -d /var/cache/apk || test -z "$(find /var/cache/apk -mindepth 1 -maxdepth 1 2>/dev/null)") &&
+        (test ! -d /root/.cache || test -z "$(find /root/.cache -mindepth 1 -maxdepth 1 2>/dev/null)")
+
+fileExistenceTests:
+  - name: az binary
+    path: /usr/bin/az
+    shouldExist: true
+
+  - name: Python binary
+    path: /usr/bin/python3
+    shouldExist: true
+
+  - name: Python alias
+    path: /usr/bin/python
+    shouldExist: true
+
+  - name: Pip binary
+    path: /usr/bin/pip3
+    shouldExist: true
+
+  - name: Pip alias
+    path: /usr/bin/pip
+    shouldExist: true

@@ -8,6 +8,9 @@ dotenv:
 includes:
   variables: ./Taskfile.variables.yml
   scripts: ./Taskfile.scripts.yml
+  docker:
+    taskfile: ./Taskfile.docker.yml
+    flatten: true
   cicd:
     taskfile: ./Taskfile.cicd.yml
     flatten: true

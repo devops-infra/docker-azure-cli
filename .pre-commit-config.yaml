@@ -29,6 +29,11 @@ repos:
         entry: bash -lc 'docker run --rm -v "$PWD:/work" -w /work rhysd/actionlint:latest -color'
         language: system
         pass_filenames: false
+      - id: hadolint
+        name: hadolint
+        entry: bash -lc 'docker run --rm -v "$PWD:/work" -w /work hadolint/hadolint:latest-debian /bin/hadolint "$@"' --
+        language: system
+        files: (^|/)Dockerfile(\..*)?$
       - id: shellcheck
         name: shellcheck
         entry: bash -lc 'docker run --rm -v "$PWD:/work" -w /work koalaman/shellcheck:stable -x -S style "$@"' --
