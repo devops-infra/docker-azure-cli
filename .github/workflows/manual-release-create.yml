@@ -1,0 +1,120 @@
+name: (M) Release Create
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Azure CLI version to publish. Leave empty to use the Dockerfile version.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install Task
+        uses: go-task/setup-task@v2
+        with:
+          version: 3.x
+
+      - name: Run linters
+        run: task lint
+
+  prepare:
+    name: Validate version
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Task
+        uses: go-task/setup-task@v2
+        with:
+          version: 3.x
+
+      - name: Resolve version
+        id: version
+        run: |
+          set -eu
+          current="$(task version:get)"
+          requested="${{ inputs.version }}"
+          if [ -n "$requested" ] && [ "$requested" != "$current" ]; then
+            echo "❌ Requested version '$requested' does not match Dockerfile version '$current'"
+            exit 1
+          fi
+          if ! printf '%s' "$current" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "❌ Invalid Azure CLI version: $current"
+            exit 1
+          fi
+          echo "version=$current" >> "$GITHUB_OUTPUT"
+
+  build-and-push:
+    name: Build and push
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    needs: [lint, prepare]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install Task
+        uses: go-task/setup-task@v2
+        with:
+          version: 3.x
+
+      - name: Install Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Install QEMU
+        uses: docker/setup-qemu-action@v4
+        with:
+          image: tonistiigi/binfmt:latest
+          platforms: amd64,arm64
+
+      - name: Build and push images
+        env:
+          BUILDX_NO_DEFAULT_ATTESTATIONS: 1
+          DOCKER_TOKEN: ${{ secrets.DOCKER_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+          task docker:push VERSION_OVERRIDE="$VERSION"
+
+      - name: Pull published tags
+        run: |
+          set -eu
+          VERSION="${{ needs.prepare.outputs.version }}"
+          MINOR="$(printf '%s' "$VERSION" | awk -F. '{print $1 "." $2}')"
+          for image in \
+            "devopsinfra/docker-azure-cli:${VERSION}" \
+            "devopsinfra/docker-azure-cli:${MINOR}" \
+            "devopsinfra/docker-azure-cli:latest" \
+            "ghcr.io/devops-infra/docker-azure-cli:${VERSION}" \
+            "ghcr.io/devops-infra/docker-azure-cli:${MINOR}" \
+            "ghcr.io/devops-infra/docker-azure-cli:latest"
+          do
+            docker pull "$image"
+          done
+
+      - name: Run container-structure-tests
+        env:
+          IMAGE: devopsinfra/docker-azure-cli:${{ needs.prepare.outputs.version }}
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+          task test:structure VERSION_OVERRIDE="$VERSION" IMAGE="$IMAGE"

@@ -1,39 +1,92 @@
-# Universal template for organizational repository
+# `docker-azure-cli`
 
+Minimal Alpine-based Azure CLI base image for the `devops-infra` organization.
 
-## 📊 Badges
-[
-![GitHub repo](https://img.shields.io/badge/GitHub-devops--infra%2Ftemplate--repository-blueviolet.svg?style=plastic&logo=github)
-![GitHub last commit](https://img.shields.io/github/last-commit/devops-infra/template-repository?color=blueviolet&logo=github&style=plastic&label=Last%20commit)
-![GitHub code size in bytes](https://img.shields.io/github/languages/code-size/devops-infra/template-repository?color=blueviolet&label=Code%20size&style=plastic&logo=github)
-![GitHub license](https://img.shields.io/github/license/devops-infra/template-repository?color=blueviolet&logo=github&style=plastic&label=License)
-](https://github.com/devops-infra/template-repository "shields.io")
+## Source and Images
 
-## Forking
-To publish images from a fork, set these variables so Task uses your registry identities:
-`DOCKER_USERNAME`, `DOCKER_ORG_NAME`, `GITHUB_USERNAME`, `GITHUB_ORG_NAME`.
+- Source: <https://github.com/devops-infra/docker-azure-cli>
+- Docker Hub: <https://hub.docker.com/r/devopsinfra/docker-azure-cli>
+- GHCR: <https://ghcr.io/devops-infra/docker-azure-cli>
 
-Two supported options (environment variables take precedence over `.env`):
+## Current Version
+
+| Image | Current Azure CLI version |
+| --- | --- |
+| `docker-azure-cli` | `2.87.0` |
+
+Published image tags:
+
+- `2.87.0`
+- `2.87`
+- `latest`
+
+All published images are multi-architecture:
+
+- `linux/amd64`
+- `linux/arm64`
+
+## What Is Included
+
+- `alpine:3.24.x`
+- `bash`
+- `ca-certificates`
+- `jq`
+- `python3` (`python`)
+- `pip3` (`pip`)
+- `azure-cli`
+
+This image intentionally does **not** include:
+
+- AWS CLI
+- Google Cloud SDK
+- Terraform
+- OpenTofu
+- Terragrunt
+
+## Local Usage
+
+Build the image for the local host platform:
+
 ```bash
-# .env (local only, not committed)
-DOCKER_USERNAME=your-dockerhub-user
-DOCKER_ORG_NAME=your-dockerhub-org
-GITHUB_USERNAME=your-github-user
-GITHUB_ORG_NAME=your-github-org
-```
-
-```bash
-# Shell override
-DOCKER_USERNAME=your-dockerhub-user \
-DOCKER_ORG_NAME=your-dockerhub-org \
-GITHUB_USERNAME=your-github-user \
-GITHUB_ORG_NAME=your-github-org \
 task docker:build
 ```
 
-Recommended setup:
-- Local development: use a `.env` file.
-- GitHub Actions: set repo variables for the four values above, and secrets for `DOCKER_TOKEN` and `GITHUB_TOKEN`.
+Push the multi-arch image to Docker Hub and GHCR:
 
-Publish images without a release:
-- Run the `(Manual) Release Create` workflow with `build_only: true` to build and push images without tagging a release.
+```bash
+task docker:push
+```
+
+Check for Azure CLI and Alpine package updates:
+
+```bash
+task dependency:update
+```
+
+Run container-structure-tests against the built image:
+
+```bash
+task test:structure
+```
+
+## Downstream Usage
+
+Use this image as a base for Azure-enabled Docker images:
+
+```dockerfile
+FROM ghcr.io/devops-infra/docker-azure-cli:2.87.0
+```
+
+Example interactive usage:
+
+```bash
+docker run --rm -it devopsinfra/docker-azure-cli:latest az version
+```
+
+## Automation
+
+The repository includes workflows for:
+
+- dependency update pull requests when a new Azure CLI version is published
+- manual multi-arch image publishing to Docker Hub and GHCR
+- automatic pull request creation for non-default branches

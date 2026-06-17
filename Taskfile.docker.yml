@@ -1,0 +1,36 @@
+version: '3'
+
+silent: true
+
+tasks:
+  docker:login:
+    desc: Login to hub.docker.com and ghcr.io
+    cmds:
+      - task: scripts:docker:login
+
+  docker:cmds:
+    desc: Show docker build commands
+    cmds:
+      - task: scripts:docker:cmds
+
+  docker:build:
+    desc: Build Docker image for the local host platform
+    cmds:
+      - task: scripts:docker:build
+
+  docker:build:inspect:
+    desc: Inspect built Docker image
+    cmds:
+      - task: scripts:docker:build:inspect
+
+  docker:push:
+    desc: Build and push multi-arch Docker images
+    deps:
+      - task: docker:login
+    cmds:
+      - task: scripts:docker:push
+
+  docker:push:inspect:
+    desc: Inspect pushed Docker image
+    cmds:
+      - task: scripts:docker:push:inspect

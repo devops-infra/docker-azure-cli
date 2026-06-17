@@ -31,10 +31,6 @@ tasks:
     cmds:
       - |
         echo "▶️ Running hadolint..."
-        if [ ! -f Dockerfile ]; then
-          echo "ℹ️ No Dockerfile found, skipping hadolint"
-          exit 0
-        fi
         set +e
         docker run --rm -i -v "$PWD:/work" -w /work hadolint/hadolint:latest-debian < Dockerfile
         rc=$?
@@ -53,18 +49,12 @@ tasks:
       - |
         echo "▶️ Running shellcheck..."
         mapfile -t files < <(git ls-files '*.sh')
-        existing_files=()
-        for f in "${files[@]}"; do
-          if [ -f "$f" ]; then
-            existing_files+=("$f")
-          fi
-        done
-        if [ "${#existing_files[@]}" -eq 0 ]; then
+        if [ "${#files[@]}" -eq 0 ]; then
           echo "ℹ️ No shell scripts found, skipping shellcheck"
           exit 0
         fi
         set +e
-        docker run --rm -i -v "$PWD:/work" -w /work koalaman/shellcheck:stable -x -S style -- "${existing_files[@]}"
+        docker run --rm -i -v "$PWD:/work" -w /work koalaman/shellcheck:stable -x -S style -- "${files[@]}"
         rc=$?
         set -e
         if [ "$rc" -eq 0 ]; then
@@ -90,174 +80,351 @@ tasks:
           exit $rc
         fi
 
-  dependency:update:
-    desc: 'No-op: no dedicated dependency updater configured for this profile'
+  docker:login:
+    desc: Login to container registries
     cmds:
       - |
-        echo "INFO: No dedicated dependency updater configured for this repository profile."
-        echo "INFO: Dependabot handles GitHub Actions and package metadata updates."
-        echo "INFO: Keep this task as a safe no-op until a repo-specific dependency updater is defined."
+        set -eu
+        has_dockerhub=false
+        has_ghcr=false
+
+        if [ -n '{{.DOCKER_USERNAME}}' ] && [ -n "${DOCKER_TOKEN:-}" ]; then
+          has_dockerhub=true
+        fi
+
+        if [ -n '{{.GITHUB_USERNAME}}' ] && [ -n "${GITHUB_TOKEN:-}" ]; then
+          has_ghcr=true
+        fi
+
+        if [ "$has_dockerhub" = false ] && [ "$has_ghcr" = false ]; then
+          echo "❌ No registry credentials provided. Set DOCKER_USERNAME/DOCKER_TOKEN or GITHUB_USERNAME/GITHUB_TOKEN."
+          exit 1
+        fi
+
+        if [ "$has_dockerhub" = true ]; then
+          printf '%s' "${DOCKER_TOKEN}" | docker login -u '{{.DOCKER_USERNAME}}' --password-stdin
+        fi
+
+        if [ "$has_ghcr" = true ]; then
+          printf '%s' "${GITHUB_TOKEN}" | docker login ghcr.io -u '{{.GITHUB_USERNAME}}' --password-stdin
+        fi
+
+  docker:cmds:
+    desc: Show docker build commands
+    cmds:
+      - |
+        echo "Local build:"
+        echo "docker buildx build --platform {{.PLATFORMS_LOCAL}} --load ..."
+        echo
+        echo "Multi-arch push:"
+        echo "docker buildx build --platform {{.PLATFORMS}} --push ..."
+
+  docker:build:
+    desc: Build image for the local host platform
+    shell: bash
+    cmds:
+      - |
+        set -eu
+        docker buildx create --use >/dev/null 2>&1 || true
+        cmd=(docker buildx build --platform '{{.PLATFORMS_LOCAL}}' --load --file '{{.DOCKERFILE}}')
+        cmd+=(--build-arg "AZ_VERSION={{.VERSION_FULL}}")
+        cmd+=(--label "org.label-schema.schema-version=1.0")
+        cmd+=(--label "org.label-schema.build-date={{.BUILD_DATE}}")
+        cmd+=(--label "org.label-schema.name={{.LABEL_NAME}}")
+        cmd+=(--label "org.label-schema.description={{.LABEL_DESCRIPTION}}")
+        cmd+=(--label "org.label-schema.usage={{.LABEL_DOCS_URL}}")
+        cmd+=(--label "org.label-schema.url={{.LABEL_HOMEPAGE}}")
+        cmd+=(--label "org.label-schema.vcs-url={{.LABEL_REPO_URL}}")
+        cmd+=(--label "org.label-schema.vcs-ref={{.GIT_SHA}}")
+        cmd+=(--label "org.label-schema.vendor={{.LABEL_VENDOR}}")
+        cmd+=(--label "org.label-schema.version={{.VERSION_FULL}}")
+        cmd+=(--label "org.opencontainers.image.created={{.BUILD_DATE}}")
+        cmd+=(--label "org.opencontainers.image.authors={{.LABEL_AUTHOR}}")
+        cmd+=(--label "org.opencontainers.image.url={{.LABEL_HOMEPAGE}}")
+        cmd+=(--label "org.opencontainers.image.documentation={{.LABEL_DOCS_URL}}")
+        cmd+=(--label "org.opencontainers.image.source={{.LABEL_REPO_URL}}")
+        cmd+=(--label "org.opencontainers.image.version={{.VERSION_FULL}}")
+        cmd+=(--label "org.opencontainers.image.revision={{.GIT_SHA}}")
+        cmd+=(--label "org.opencontainers.image.vendor={{.LABEL_VENDOR}}")
+        cmd+=(--label "org.opencontainers.image.licenses={{.LABEL_LICENSE}}")
+        cmd+=(--label "org.opencontainers.image.title={{.LABEL_NAME}}")
+        cmd+=(--label "org.opencontainers.image.description={{.LABEL_DESCRIPTION}}")
+        cmd+=(--tag '{{.DOCKER_NAME}}:{{.EXACT_TAG}}')
+        cmd+=(--tag '{{.DOCKER_NAME}}:{{.MINOR_TAG}}')
+        cmd+=(--tag '{{.DOCKER_NAME}}:{{.LATEST_TAG}}')
+        cmd+=(--tag '{{.GITHUB_NAME}}:{{.EXACT_TAG}}')
+        cmd+=(--tag '{{.GITHUB_NAME}}:{{.MINOR_TAG}}')
+        cmd+=(--tag '{{.GITHUB_NAME}}:{{.LATEST_TAG}}')
+        cmd+=(.)
+        "${cmd[@]}"
+
+  docker:build:inspect:
+    desc: Inspect the local exact-tag image
+    cmds:
+      - docker image inspect {{.DOCKER_NAME}}:{{.EXACT_TAG}} | jq
+
+  docker:push:
+    desc: Build and push multi-arch images
+    shell: bash
+    cmds:
+      - |
+        set -eu
+        docker buildx create --use >/dev/null 2>&1 || true
+        cmd=(docker buildx build --platform '{{.PLATFORMS}}' --push --file '{{.DOCKERFILE}}')
+        cmd+=(--build-arg "AZ_VERSION={{.VERSION_FULL}}")
+        cmd+=(--annotation 'index:org.label-schema.schema-version=1.0')
+        cmd+=(--annotation 'index:org.label-schema.build-date={{.BUILD_DATE}}')
+        cmd+=(--annotation 'index:org.label-schema.name={{.LABEL_NAME}}')
+        cmd+=(--annotation 'index:org.label-schema.description={{.LABEL_DESCRIPTION}}')
+        cmd+=(--annotation 'index:org.label-schema.usage={{.LABEL_DOCS_URL}}')
+        cmd+=(--annotation 'index:org.label-schema.url={{.LABEL_HOMEPAGE}}')
+        cmd+=(--annotation 'index:org.label-schema.vcs-url={{.LABEL_REPO_URL}}')
+        cmd+=(--annotation 'index:org.label-schema.vcs-ref={{.GIT_SHA}}')
+        cmd+=(--annotation 'index:org.label-schema.vendor={{.LABEL_VENDOR}}')
+        cmd+=(--annotation 'index:org.label-schema.version={{.VERSION_FULL}}')
+        cmd+=(--annotation 'index:org.opencontainers.image.created={{.BUILD_DATE}}')
+        cmd+=(--annotation 'index:org.opencontainers.image.authors={{.LABEL_AUTHOR}}')
+        cmd+=(--annotation 'index:org.opencontainers.image.url={{.LABEL_HOMEPAGE}}')
+        cmd+=(--annotation 'index:org.opencontainers.image.documentation={{.LABEL_DOCS_URL}}')
+        cmd+=(--annotation 'index:org.opencontainers.image.source={{.LABEL_REPO_URL}}')
+        cmd+=(--annotation 'index:org.opencontainers.image.version={{.VERSION_FULL}}')
+        cmd+=(--annotation 'index:org.opencontainers.image.revision={{.GIT_SHA}}')
+        cmd+=(--annotation 'index:org.opencontainers.image.vendor={{.LABEL_VENDOR}}')
+        cmd+=(--annotation 'index:org.opencontainers.image.licenses={{.LABEL_LICENSE}}')
+        cmd+=(--annotation 'index:org.opencontainers.image.title={{.LABEL_NAME}}')
+        cmd+=(--annotation 'index:org.opencontainers.image.description={{.LABEL_DESCRIPTION}}')
+        cmd+=(--label "org.label-schema.schema-version=1.0")
+        cmd+=(--label "org.label-schema.build-date={{.BUILD_DATE}}")
+        cmd+=(--label "org.label-schema.name={{.LABEL_NAME}}")
+        cmd+=(--label "org.label-schema.description={{.LABEL_DESCRIPTION}}")
+        cmd+=(--label "org.label-schema.usage={{.LABEL_DOCS_URL}}")
+        cmd+=(--label "org.label-schema.url={{.LABEL_HOMEPAGE}}")
+        cmd+=(--label "org.label-schema.vcs-url={{.LABEL_REPO_URL}}")
+        cmd+=(--label "org.label-schema.vcs-ref={{.GIT_SHA}}")
+        cmd+=(--label "org.label-schema.vendor={{.LABEL_VENDOR}}")
+        cmd+=(--label "org.label-schema.version={{.VERSION_FULL}}")
+        cmd+=(--label "org.opencontainers.image.created={{.BUILD_DATE}}")
+        cmd+=(--label "org.opencontainers.image.authors={{.LABEL_AUTHOR}}")
+        cmd+=(--label "org.opencontainers.image.url={{.LABEL_HOMEPAGE}}")
+        cmd+=(--label "org.opencontainers.image.documentation={{.LABEL_DOCS_URL}}")
+        cmd+=(--label "org.opencontainers.image.source={{.LABEL_REPO_URL}}")
+        cmd+=(--label "org.opencontainers.image.version={{.VERSION_FULL}}")
+        cmd+=(--label "org.opencontainers.image.revision={{.GIT_SHA}}")
+        cmd+=(--label "org.opencontainers.image.vendor={{.LABEL_VENDOR}}")
+        cmd+=(--label "org.opencontainers.image.licenses={{.LABEL_LICENSE}}")
+        cmd+=(--label "org.opencontainers.image.title={{.LABEL_NAME}}")
+        cmd+=(--label "org.opencontainers.image.description={{.LABEL_DESCRIPTION}}")
+        cmd+=(--tag '{{.DOCKER_NAME}}:{{.EXACT_TAG}}')
+        cmd+=(--tag '{{.DOCKER_NAME}}:{{.MINOR_TAG}}')
+        cmd+=(--tag '{{.DOCKER_NAME}}:{{.LATEST_TAG}}')
+        cmd+=(--tag '{{.GITHUB_NAME}}:{{.EXACT_TAG}}')
+        cmd+=(--tag '{{.GITHUB_NAME}}:{{.MINOR_TAG}}')
+        cmd+=(--tag '{{.GITHUB_NAME}}:{{.LATEST_TAG}}')
+        cmd+=(.)
+        "${cmd[@]}"
+
+  docker:push:inspect:
+    desc: Inspect the pushed exact-tag image
+    cmds:
+      - docker buildx imagetools inspect {{.DOCKER_NAME}}:{{.EXACT_TAG}}
+
+  test:structure:
+    desc: Run container-structure-tests
+    cmds:
+      - |
+        set -eu
+        image="${IMAGE:-{{.DOCKER_NAME}}:{{.EXACT_TAG}}}"
+        docker run --rm \
+          -e AZ_VERSION='{{.VERSION_FULL}}' \
+          -v /var/run/docker.sock:/var/run/docker.sock \
+          -v "$PWD:/work" \
+          -w /work \
+          gcr.io/gcp-runtimes/container-structure-test:v1.19.3 \
+          test \
+          --image "$image" \
+          --config tests/azure.yml
+
+  packages:update:
+    desc: Update Alpine package pins in alpine-packages.txt
+    cmds:
+      - |
+        set -eu
+        if [ ! -f Dockerfile ] || [ ! -f alpine-packages.txt ]; then
+          echo "INFO: Dockerfile or alpine-packages.txt not found; nothing to update"
+          exit 0
+        fi
+
+        base_image="$(awk '
+          toupper($1) == "FROM" {
+            i = 2
+            while (i <= NF && $i ~ /^--/) {
+              i++
+            }
+            if (i <= NF) {
+              image = $i
+            }
+          }
+          END {
+            if (image != "") {
+              print image
+            }
+          }
+        ' Dockerfile)"
+
+        case "$base_image" in
+          alpine:*) ;;
+          *) echo "INFO: Base image is '$base_image', not Alpine; nothing to update"; exit 0 ;;
+        esac
+
+        alpine_line="${base_image#alpine:}"
+        alpine_minor="$(printf '%s' "$alpine_line" | awk -F. '{print $1 "." $2}')"
+        alpine_repo="v${alpine_minor}"
+        arch="x86_64"
+
+        normalize_minor() {
+          printf '%s' "$1" | sed -E 's/^([0-9]+\.[0-9]+).*/\1/'
+        }
+
+        fetch_index() {
+          repo="$1"
+          out="$2"
+          url="https://dl-cdn.alpinelinux.org/alpine/${alpine_repo}/${repo}/${arch}/APKINDEX.tar.gz"
+          curl --fail --silent --show-error "$url" | tar -O -zx APKINDEX > "$out"
+        }
+
+        lookup_latest() {
+          pkg="$1"
+          for index in "$index_main" "$index_community"; do
+            found="$(awk -v pkg="$pkg" '
+              BEGIN { RS=""; FS="\n" }
+              {
+                p=""; v=""
+                for (i=1; i<=NF; i++) {
+                  if ($i ~ /^P:/) p=substr($i,3)
+                  if ($i ~ /^V:/) v=substr($i,3)
+                }
+                if (p==pkg) { print v; exit }
+              }
+            ' "$index")"
+            if [ -n "$found" ]; then
+              printf '%s' "$found"
+              return 0
+            fi
+          done
+          return 1
+        }
+
+        mkdir -p .tmp
+        index_main=".tmp/apkindex-main-${alpine_repo}-${arch}.txt"
+        index_community=".tmp/apkindex-community-${alpine_repo}-${arch}.txt"
+        fetch_index main "$index_main"
+        fetch_index community "$index_community"
+
+        tmp_out=".tmp/alpine-packages.updated.txt"
+        : > "$tmp_out"
+        updated=0
+        while IFS= read -r line || [ -n "$line" ]; do
+          if [ -z "$line" ] || printf '%s' "$line" | grep -Eq '^[[:space:]]*#'; then
+            echo "$line" >> "$tmp_out"
+            continue
+          fi
+
+          pkg="$(printf '%s' "$line" | sed -E 's/^([a-zA-Z0-9+_.-]+).*/\1/')"
+          current_minor="$(printf '%s' "$line" | sed -nE 's/^[a-zA-Z0-9+_.-]+(~=|=~)([0-9]+\.[0-9]+).*$/\2/p')"
+          latest_full="$(lookup_latest "$pkg" || true)"
+
+          if [ -z "$latest_full" ]; then
+            echo "$line" >> "$tmp_out"
+            continue
+          fi
+
+          latest_minor="$(normalize_minor "$latest_full")"
+          if [ "$latest_minor" != "$current_minor" ]; then
+            updated=1
+          fi
+          echo "$pkg~=$latest_minor" >> "$tmp_out"
+        done < alpine-packages.txt
+
+        if ! cmp -s alpine-packages.txt "$tmp_out"; then
+          mv "$tmp_out" alpine-packages.txt
+        else
+          rm -f "$tmp_out"
+        fi
+
+        if [ "$updated" -eq 0 ]; then
+          echo "INFO: No Alpine package updates were required"
+        fi
+
+  dependency:update:
+    desc: Update Azure CLI version and Alpine package pins
+    cmds:
+      - task: packages:update
+      - |
+        set -eu
+        az_latest="$(curl -LsS https://pypi.org/pypi/azure-cli/json | jq -r '.info.version')"
+        current='{{.AZ_VERSION}}'
+
+        update_file() {
+          file="$1"
+          from="$2"
+          to="$3"
+          if [ "$from" = "$to" ]; then
+            return 0
+          fi
+          from_escaped="$(printf '%s\n' "$from" | sed 's/[][\\.^$*&/]/\\&/g')"
+          to_escaped="$(printf '%s\n' "$to" | sed 's/[&/\\]/\\&/g')"
+          {{.SED}} -i "s/${from_escaped}/${to_escaped}/g" "$file"
+        }
+
+        set_arg() {
+          file="$1"
+          key="$2"
+          value="$3"
+          {{.SED}} -i "s|^ARG ${key}=.*$|ARG ${key}=${value}|g" "$file"
+        }
+
+        echo "Current Azure CLI: $current | Latest: $az_latest"
+        set_arg Dockerfile AZ_VERSION "$az_latest"
+        update_file README.md "$current" "$az_latest"
+
+        version_tag=""
+        [ "$current" = "$az_latest" ] || version_tag="$version_tag az-$az_latest"
+        if ! git diff --quiet -- alpine-packages.txt 2>/dev/null; then
+          version_tag="$version_tag alpine-packages"
+        fi
+        version_tag="$(echo "$version_tag" | sed 's/^ *//')"
+        version_branch="$(echo "$version_tag" | sed 's/ /-/g')"
+        if [ -n "${GITHUB_ENV:-}" ]; then
+          echo "VERSION_TAG=$version_tag" >> "$GITHUB_ENV"
+          echo "VERSION_BRANCH=$version_branch" >> "$GITHUB_ENV"
+        fi
 
   git:get-pr-template:
-    desc: Get pull request template
+    desc: Download pull request template
     cmds:
       - mkdir -p .tmp
       - curl -LsS https://raw.githubusercontent.com/devops-infra/.github/refs/tags/v1/PULL_REQUEST_TEMPLATE.md -o .tmp/PULL_REQUEST_TEMPLATE.md
 
   git:set-config:
-    desc: Set git user config
+    desc: Set git identity for automation
     cmds:
       - git config user.name "github-actions[bot]"
       - git config user.email "github-actions[bot]@users.noreply.github.com"
 
   version:get:
-    desc: Get current version
+    desc: Get current Azure CLI version
     cmds:
-      - echo "{{.VERSION}}"
+      - echo "{{.VERSION_FULL}}"
 
   version:set:
-    desc: Validate version
+    desc: Validate version format
     cmds:
       - |
         if [ -z "{{.VERSION}}" ]; then
           echo "❌ ERROR: VERSION is empty"
           exit 1
         fi
-        if ! echo "{{.VERSION}}" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+$'; then
-          echo "❌ ERROR: VERSION '{{.VERSION}}' is not a valid semantic version (expected vX.Y.Z or X.Y.Z)"
+        if ! printf '%s' "{{.VERSION}}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+          echo "❌ ERROR: VERSION '{{.VERSION}}' is not a valid Azure CLI version (expected X.Y.Z)"
           exit 1
-        fi
-
-  version:update:patch:
-    desc: Increment patch version (e.g., 1.2.3 -> 1.2.4)
-    cmds:
-      - task version:set VERSION=v{{.MAJOR}}.{{.MINOR}}.{{.NEXT_PATCH}}
-
-  version:update:minor:
-    desc: Increment minor version (e.g., 1.2.3 -> 1.3.0)
-    cmds:
-      - task version:set VERSION=v{{.MAJOR}}.{{.NEXT_MINOR}}.0
-
-  version:update:major:
-    desc: Increment major version (e.g., 1.2.3 -> 2.0.0)
-    cmds:
-      - task version:set VERSION=v{{.NEXT_MAJOR}}.0.0
-
-  version:resolve-next:
-    desc: Resolve next version from bump type and profile
-    cmds:
-      - |
-        set -eu
-        bump_type="${BUMP_TYPE:-patch}"
-        input_version="${INPUT_VERSION:-}"
-
-        normalize_version() {
-          candidate="${1#v}"
-          if ! printf "%s" "${candidate}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            return 1
-          fi
-          printf "v%s" "${candidate}"
-        }
-
-        current="$(task version:get 2>/dev/null || true)"
-
-        case "$bump_type" in
-          set)
-            [ -n "$input_version" ] || { echo "Missing version for type=set"; exit 1; }
-            next="$(normalize_version "$input_version")" || {
-              echo "Invalid explicit version: $input_version. Expected vX.Y.Z or X.Y.Z"
-              exit 1
-            }
-            ;;
-          patch|minor|major)
-            [ -n "$current" ] || { echo "Current version not found or invalid. Expected vX.Y.Z"; exit 1; }
-            current="$(normalize_version "$current")" || { echo "Current version not found or invalid. Expected vX.Y.Z"; exit 1; }
-            no_v="${current#v}"
-            major="$(printf "%s" "$no_v" | awk -F. '{print $1}')"
-            minor="$(printf "%s" "$no_v" | awk -F. '{print $2}')"
-            patch="$(printf "%s" "$no_v" | awk -F. '{print $3}')"
-            case "$bump_type" in
-              patch) next="v${major}.${minor}.$((patch + 1))" ;;
-              minor) next="v${major}.$((minor + 1)).0" ;;
-              major) next="v$((major + 1)).0.0" ;;
-            esac
-            ;;
-          *)
-            echo "Unknown type: $bump_type"
-            exit 1
-            ;;
-        esac
-
-        printf "%s" "$next"
-
-  version:tag-release:
-    desc: Create set of git tags
-    cmds:
-      - |
-        set -eu
-        if (set -o | grep -q pipefail) 2>/dev/null; then set -o pipefail; fi
-
-        REMOTE='origin'
-        FULL='{{.VERSION_FULL}}'
-        MINOR='{{.VERSION_MINOR}}'
-        MAJOR='{{.VERSION_MAJOR}}'
-
-        # Validate vX.Y.Z
-        if ! printf "%s" "$FULL" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
-          echo "❌ ERROR: VERSION '$FULL' must match vX.Y.Z" >&2
-          exit 1
-        fi
-
-        tag_sha() { git rev-parse "refs/tags/$1" 2>/dev/null || true; }
-        remote_tag_sha() { git ls-remote --tags "$REMOTE" "refs/tags/$1" 2>/dev/null | awk '{print $1}' || true; }
-
-        echo "ℹ️ INFO: Tags - Full: $FULL | Minor: $MINOR | Major: $MAJOR"
-
-        # Full tag: must NOT exist on remote; fail fast if it does
-        full_remote_sha="$(remote_tag_sha "$FULL")"
-        if [ -n "$full_remote_sha" ]; then
-          echo "❌ ERROR: Full tag '$FULL' already exists on remote; aborting" >&2
-          exit 1
-        fi
-
-        # Create full tag locally (if missing) and push
-        if git rev-parse --quiet --verify "refs/tags/$FULL" >/dev/null 2>&1; then
-          echo "ℹ️ INFO: Full tag '$FULL' exists locally but not on remote; pushing"
-        else
-          echo "ℹ️ INFO: Creating full tag '$FULL'"
-          git tag --annotate "$FULL" --message "$FULL"
-        fi
-        git push "$REMOTE" "refs/tags/$FULL"
-        echo "✅ OK: Pushed full tag '$FULL'"
-
-        # Minor tag: create or update
-        git tag --force --annotate "$MINOR" --message "$FULL"
-        minor_local_sha="$(tag_sha "$MINOR")"
-        minor_remote_sha="$(remote_tag_sha "$MINOR")"
-        if [ -z "$minor_remote_sha" ]; then
-          git push "$REMOTE" "refs/tags/$MINOR"
-          echo "✅ OK: Created and pushed minor tag '$MINOR' -> $minor_local_sha"
-        else
-          if [ "$minor_local_sha" != "$minor_remote_sha" ]; then
-            echo "⚠️ WARN: Updating remote minor tag '$MINOR' to $minor_local_sha (was $minor_remote_sha)"
-            git push --force "$REMOTE" "refs/tags/$MINOR"
-          else
-            echo "ℹ️ INFO: Minor tag '$MINOR' already up-to-date"
-          fi
-        fi
-
-        # Major tag: create or update
-        git tag --force --annotate "$MAJOR" --message "$FULL"
-        major_local_sha="$(tag_sha "$MAJOR")"
-        major_remote_sha="$(remote_tag_sha "$MAJOR")"
-        if [ -z "$major_remote_sha" ]; then
-          git push "$REMOTE" "refs/tags/$MAJOR"
-          echo "✅ OK: Created and pushed major tag '$MAJOR' -> $major_local_sha"
-        else
-          if [ "$major_local_sha" != "$major_remote_sha" ]; then
-            echo "⚠️ WARN: Updating remote major tag '$MAJOR' to $major_local_sha (was $major_remote_sha)"
-            git push --force "$REMOTE" "refs/tags/$MAJOR"
-          else
-            echo "ℹ️ INFO: Major tag '$MAJOR' already up-to-date"
-          fi
         fi

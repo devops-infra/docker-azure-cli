@@ -2,4 +2,7 @@
 *
 
 # Include
+!Dockerfile
+!LICENSE
 !README.md
+!alpine-packages.txt
