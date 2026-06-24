@@ -43,8 +43,8 @@ vars:
       else
         echo master
       fi
-  VERSION_PREFIX:
-    sh: echo "${VERSION_PREFIX:-}"
+  VERSION_SUFFIX:
+    sh: echo "${VERSION_SUFFIX:-}"
   VERSION_OVERRIDE:
     sh: echo "${VERSION_OVERRIDE:-}"
   AZ_VERSION:
@@ -59,6 +59,7 @@ vars:
   VERSION_FULL: '{{.VERSION}}'
   VERSION_MINOR:
     sh: printf "%s" "{{.VERSION}}" | awk -F. '{print $1 "." $2}'
+  VERSION_TAG: '{{.VERSION_FULL}}{{.VERSION_SUFFIX}}'
   DOCKER_USERNAME:
     sh: echo "${DOCKER_USERNAME:-christophshyper}"
   DOCKER_ORG_NAME:
@@ -93,8 +94,6 @@ vars:
   LABEL_VENDOR: DevOps-Infra
   LABEL_LICENSE: MIT
   DOCKERFILE: Dockerfile
-  EFFECTIVE_PREFIX:
-    sh: printf "%s" "${VERSION_PREFIX:-}"
-  EXACT_TAG: '{{.EFFECTIVE_PREFIX}}{{.VERSION_FULL}}'
-  MINOR_TAG: '{{.EFFECTIVE_PREFIX}}{{.VERSION_MINOR}}'
-  LATEST_TAG: '{{.EFFECTIVE_PREFIX}}latest'
+  EXACT_TAG: '{{.VERSION_FULL}}{{.VERSION_SUFFIX}}'
+  MINOR_TAG: '{{.VERSION_MINOR}}{{.VERSION_SUFFIX}}'
+  LATEST_TAG: 'latest{{.VERSION_SUFFIX}}'

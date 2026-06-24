@@ -1,50 +1,54 @@
-# `docker-azure-cli`
+# Azure CLI Docker Image
+**Minimal Alpine-based Azure CLI base image for the `devops-infra` organization**
 
-Minimal Alpine-based Azure CLI base image for the `devops-infra` organization.
+## Available on
+- **Docker Hub:** [devopsinfra/docker-azure-cli:latest](https://hub.docker.com/repository/docker/devopsinfra/docker-azure-cli)
+- **GitHub Packages:** [ghcr.io/devops-infra/docker-azure-cli:latest](https://github.com/devops-infra/docker-azure-cli/pkgs/container/docker-azure-cli)
+- **Source:** [devops-infra/docker-azure-cli](https://github.com/devops-infra/docker-azure-cli)
 
-## Source and Images
+## Badges
+[
+![GitHub repo](https://img.shields.io/badge/GitHub-devops--infra%2Fdocker--azure--cli-2496ED?style=plastic&logo=github)
+![GitHub last commit](https://img.shields.io/github/last-commit/devops-infra/docker-azure-cli?color=2496ED&label=Last%20commit&logo=github&style=plastic)
+![Pull Request](https://github.com/devops-infra/docker-azure-cli/actions/workflows/auto-pull-request-create.yml/badge.svg)
+](https://github.com/devops-infra/docker-azure-cli "shields.io")
+<br>
+[
+![DockerHub](https://img.shields.io/badge/DockerHub-devopsinfra%2Fdocker--azure--cli-0db7ed.svg?style=plastic&logo=docker)
+![Docker version](https://img.shields.io/docker/v/devopsinfra/docker-azure-cli/latest?color=0db7ed&label=Version&logo=docker&style=plastic)
+![Image size](https://img.shields.io/docker/image-size/devopsinfra/docker-azure-cli/latest?label=Image%20size&style=plastic&logo=docker)
+![Docker Pulls](https://img.shields.io/docker/pulls/devopsinfra/docker-azure-cli?color=0db7ed&label=Pulls&logo=docker&style=plastic)
+](https://hub.docker.com/r/devopsinfra/docker-azure-cli "shields.io")
 
-- Source: <https://github.com/devops-infra/docker-azure-cli>
-- Docker Hub: <https://hub.docker.com/r/devopsinfra/docker-azure-cli>
-- GHCR: <https://ghcr.io/devops-infra/docker-azure-cli>
-
-## Current Version
-
-| Image | Current Azure CLI version |
-| --- | --- |
-| `docker-azure-cli` | `2.87.0` |
-
-Published image tags:
-
-- `2.87.0`
-- `2.87`
-- `latest`
+## Current image tags
+- Exact Azure CLI tag: `2.87.0`
+- Minor Azure CLI tag: `2.87`
+- Floating tag: `latest`
 
 All published images are multi-architecture:
-
 - `linux/amd64`
 - `linux/arm64`
 
-## What Is Included
-
-- `alpine:3.24.x`
+## What is included
 - `bash`
 - `ca-certificates`
 - `jq`
-- `python3` (`python`)
-- `pip3` (`pip`)
+- `python3` with `python`
+- `pip3` with `pip`
 - `azure-cli`
 
-This image intentionally does **not** include:
-
+This image intentionally does not include:
 - AWS CLI
 - Google Cloud SDK
 - Terraform
 - OpenTofu
 - Terragrunt
 
-## Local Usage
+## Validation
+Container Structure Tests for this repository are run with [`devops-infra/action-container-structure-test@v1`](https://github.com/devops-infra/action-container-structure-test), and the local `task test:structure` helper uses the same published runtime image.
+CI candidate images use the shared suffix tag format: `<version>-test`.
 
+## Local usage
 Build the image for the local host platform:
 
 ```bash
@@ -63,14 +67,13 @@ Check for Azure CLI and Alpine package updates:
 task dependency:update
 ```
 
-Run container-structure-tests against the built image:
+Run Container Structure Tests against the built image:
 
 ```bash
 task test:structure
 ```
 
-## Downstream Usage
-
+## Downstream usage
 Use this image as a base for Azure-enabled Docker images:
 
 ```dockerfile
@@ -84,9 +87,7 @@ docker run --rm -it devopsinfra/docker-azure-cli:latest az version
 ```
 
 ## Automation
-
 The repository includes workflows for:
-
 - dependency update pull requests when a new Azure CLI version is published
 - manual multi-arch image publishing to Docker Hub and GHCR
 - automatic pull request creation for non-default branches
