@@ -46,6 +46,7 @@ This image intentionally does not include:
 
 ## Validation
 Container Structure Tests for this repository are run with [`devops-infra/action-container-structure-test@v1`](https://github.com/devops-infra/action-container-structure-test), and the local `task test:structure` helper uses the same published runtime image.
+CI candidate images use the shared suffix tag format: `<version>-test`.
 
 ## Local usage
 Build the image for the local host platform:
