@@ -235,14 +235,13 @@ tasks:
         set -eu
         image="${IMAGE:-{{.DOCKER_NAME}}:{{.EXACT_TAG}}}"
         docker run --rm \
-          -e AZ_VERSION='{{.VERSION_FULL}}' \
+          -e INPUT_IMAGE="$image" \
+          -e INPUT_CONFIG=tests/docker/azure.yml \
+          -e INPUT_PULL=false \
           -v /var/run/docker.sock:/var/run/docker.sock \
           -v "$PWD:/work" \
           -w /work \
-          gcr.io/gcp-runtimes/container-structure-test:v1.19.3 \
-          test \
-          --image "$image" \
-          --config tests/azure.yml
+          devopsinfra/action-container-structure-test:v1
 
   packages:update:
     desc: Update Alpine package pins in alpine-packages.txt
@@ -386,6 +385,7 @@ tasks:
         echo "Current Azure CLI: $current | Latest: $az_latest"
         set_arg Dockerfile AZ_VERSION "$az_latest"
         update_file README.md "$current" "$az_latest"
+        update_file tests/docker/azure.yml "$current" "$az_latest"
 
         version_tag=""
         [ "$current" = "$az_latest" ] || version_tag="$version_tag az-$az_latest"

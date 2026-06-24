@@ -4,16 +4,13 @@ commandTests:
   - name: Alpine version
     command: cat
     args: [/etc/os-release]
-    expectedOutput: [VERSION_ID=3\.24]
+    expectedOutput: [VERSION_ID=3\.24\.1]
 
   - name: Azure CLI exact version
     command: bash
-    envVars:
-      - key: EXPECTED_AZ_VERSION
-        value: ${AZ_VERSION}
     args:
       - -lc
-      - test "$(az version --output json | jq -r '."azure-cli"')" = "${EXPECTED_AZ_VERSION}"
+      - test "$(az version --output json | jq -r '."azure-cli"')" = "2.87.0"
 
   - name: Runtime tools smoke tests
     command: bash
