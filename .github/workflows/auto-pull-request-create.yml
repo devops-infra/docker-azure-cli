@@ -7,16 +7,118 @@ on:
       - main
       - release/**
       - dependabot/**
+  pull_request:
 
 permissions:
-  contents: write
+  contents: read
   packages: write
   pull-requests: write
   issues: write
 
 jobs:
   call:
+    if: github.event_name == 'push'
+    permissions:
+      contents: write
+      packages: write
+      pull-requests: write
+      issues: write
     uses: devops-infra/.github/.github/workflows/reusable-auto-pull-request-create.yml@v1
     with:
       profile: dockerized
     secrets: inherit
+
+  lint:
+    name: Lint
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install Task
+        uses: go-task/setup-task@v2
+        with:
+          version: 3.x
+
+      - name: Run linters
+        run: task lint
+
+  docker:
+    name: Build and push
+    if: github.event_name == 'pull_request'
+    needs: [lint]
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install Task
+        uses: go-task/setup-task@v2
+        with:
+          version: 3.x
+
+      - name: Install Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Install QEMU
+        uses: docker/setup-qemu-action@v4
+        with:
+          image: tonistiigi/binfmt:latest
+          platforms: amd64,arm64
+
+      - name: Build and push image
+        env:
+          DOCKER_TOKEN: ${{ secrets.DOCKER_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+          VERSION_SUFFIX: -test
+        run: task docker:push
+
+      - name: Inspect image
+        env:
+          VERSION_SUFFIX: -test
+        run: task docker:push:inspect
+
+      - name: Detect container structure test configs
+        id: cst-configs
+        run: |
+          shopt -s nullglob
+          files=(tests/docker/*.yml tests/docker/*.yaml)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "has_tests=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          printf '%s\n' "${files[@]}" | sort > "$RUNNER_TEMP/cst-configs.txt"
+          {
+            echo "has_tests=true"
+            echo "config<<EOF"
+            cat "$RUNNER_TEMP/cst-configs.txt"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Get test image ref
+        id: cst-image
+        if: steps.cst-configs.outputs.has_tests == 'true'
+        run: |
+          VERSION="$(task version:get)"
+          IMAGE_REF="devopsinfra/${{ github.event.repository.name }}:${VERSION}-test"
+          echo "image=$IMAGE_REF" >> "$GITHUB_OUTPUT"
+
+      - name: Run container structure tests
+        if: steps.cst-configs.outputs.has_tests == 'true'
+        uses: devops-infra/action-container-structure-test@v1
+        with:
+          image: ${{ steps.cst-image.outputs.image }}
+          config: ${{ steps.cst-configs.outputs.config }}
+          pull: true
