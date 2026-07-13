@@ -21,7 +21,7 @@
 ](https://hub.docker.com/r/devopsinfra/docker-azure-cli "shields.io")
 
 ## Current image tags
-- Exact Azure CLI tag: `2.87.0`
+- Exact Azure CLI tag: `2.88.0`
 - Minor Azure CLI tag: `2.87`
 - Floating tag: `latest`
 
@@ -77,7 +77,7 @@ task test:structure
 Use this image as a base for Azure-enabled Docker images:
 
 ```dockerfile
-FROM ghcr.io/devops-infra/docker-azure-cli:2.87.0
+FROM ghcr.io/devops-infra/docker-azure-cli:2.88.0
 ```
 
 Example interactive usage:

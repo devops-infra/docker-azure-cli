@@ -2,7 +2,7 @@ FROM alpine:3.24.1
 
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
-ARG AZ_VERSION=2.87.0
+ARG AZ_VERSION=2.88.0
 
 COPY alpine-packages.txt /tmp/alpine-packages.txt
 
