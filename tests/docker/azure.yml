@@ -10,7 +10,7 @@ commandTests:
     command: bash
     args:
       - -lc
-      - test "$(az version --output json | jq -r '."azure-cli"')" = "2.89.0"
+      - test "$(az version --output json | jq -r '."azure-cli"')" = "2.89.1"
 
   - name: Runtime tools smoke tests
     command: bash
