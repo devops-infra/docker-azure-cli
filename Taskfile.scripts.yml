@@ -432,6 +432,7 @@ tasks:
   dependency:update:
     desc: Update Azure CLI version and Alpine package pins
     cmds:
+      - task: alpine:update
       - task: packages:update
       - |
         set -eu
